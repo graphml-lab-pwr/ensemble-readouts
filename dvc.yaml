@@ -1,0 +1,103 @@
+vars:
+  - experiments/config/config_names.yaml
+
+stages:
+  train_enzymes:
+    foreach: ${ensemble_readouts}
+    do:
+      cmd: >-
+        PYTHONPATH=. python experiments/scripts/train_gnn_with_reps.py 
+        --config-path experiments/config/ensemble_readouts/hparams_enzymes.yaml
+        --config-key ${item}
+      deps:
+        - data/datasets/ENZYMES
+        - experiments/scripts/train_gnn_with_reps.py
+      params:
+        - experiments/config/ensemble_readouts/hparams_enzymes.yaml:
+            - ${item}
+      outs:
+        - data/experiments/ensemble_readouts/ENZYMES/${item}
+
+  train_mutag:
+    foreach: ${ensemble_readouts}
+    do:
+      cmd: >-
+        PYTHONPATH=. python experiments/scripts/train_gnn_with_reps.py 
+        --config-path experiments/config/ensemble_readouts/hparams_mutag.yaml
+        --config-key ${item}
+      deps:
+        - data/datasets/MUTAG
+        - experiments/scripts/train_gnn_with_reps.py
+      params:
+        - experiments/config/ensemble_readouts/hparams_mutag.yaml:
+            - ${item}
+      outs:
+        - data/experiments/ensemble_readouts/MUTAG/${item}
+
+  train_reddit_multi:
+    foreach: ${ensemble_readouts}
+    do:
+      cmd: >-
+        PYTHONPATH=. python experiments/scripts/train_gnn_with_reps.py 
+        --config-path experiments/config/ensemble_readouts/hparams_reddit_multi.yaml
+        --config-key ${item}
+      deps:
+        - data/datasets/REDDIT-MULTI-12K
+        - experiments/scripts/train_gnn_with_reps.py
+      params:
+        - experiments/config/ensemble_readouts/hparams_reddit_multi.yaml:
+            - ${item}
+      outs:
+        - data/experiments/ensemble_readouts/REDDIT-MULTI-12K/${item}
+
+
+  train_zinc:
+    foreach: ${ensemble_readouts}
+    do:
+      cmd: >-
+        PYTHONPATH=. python experiments/scripts/train_gnn_with_reps.py 
+        --config-path experiments/config/ensemble_readouts/hparams_zinc.yaml
+        --config-key ${item}
+      deps:
+        - data/datasets/ZINC
+        - experiments/scripts/train_gnn_with_reps.py
+      params:
+        - experiments/config/ensemble_readouts/hparams_zinc.yaml:
+            - ${item}
+      outs:
+        - data/experiments/ensemble_readouts/zinc/${item}
+
+  summarize_metrics:
+    cmd: >-
+      PYTHONPATH=. python experiments/scripts/summarize_metrics.py 
+      --experiment-root-dir data/experiments/ensemble_readouts
+      --n-jobs 20
+    deps:
+      - experiments/scripts/summarize_metrics.py
+      - data/experiments/ensemble_readouts/ENZYMES
+      - data/experiments/ensemble_readouts/MUTAG
+      - data/experiments/ensemble_readouts/zinc
+      - data/experiments/ensemble_readouts/REDDIT-MULTI-12K
+    outs:
+      - data/experiments/ensemble_readouts/all_metrics.csv
+      - data/experiments/ensemble_readouts/all_metrics_agg.csv
+      - data/experiments/ensemble_readouts/all_metrics_agg.md:
+          cache: false
+
+  generate_paper_results:
+    cmd: >-
+      papermill
+      -p results_path data/experiments/ensemble_readouts/all_metrics.csv
+      -p plot_path_svg data/experiments/ensemble_readouts/paper/params_vs_efficiency.svg
+      -p plot_path_png data/experiments/ensemble_readouts/paper/params_vs_efficiency.png
+      -p table_path data/experiments/ensemble_readouts/paper/results_percentage.tex
+      notebooks/results_analysis.ipynb
+      data/notebooks/results_analysis_output.ipynb
+    deps:
+      - data/experiments/ensemble_readouts/all_metrics.csv
+      - notebooks/results_analysis.ipynb
+    outs:
+      - data/notebooks/results_analysis_output.ipynb
+      - data/experiments/ensemble_readouts/paper/params_vs_efficiency.svg
+      - data/experiments/ensemble_readouts/paper/params_vs_efficiency.png
+      - data/experiments/ensemble_readouts/paper/results_percentage.tex

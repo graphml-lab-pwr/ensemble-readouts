@@ -1,0 +1,300 @@
+reddit_multi: &reddit_multi
+  dataset_dir: data/datasets
+  task_level: graph
+  dataset_type: tud
+  dataset_name: REDDIT-MULTI-12K
+  input_dim: 3063 # torch_geometric transforms to max_degree + 1
+  output_dim: 11
+  max_nodes: 3782
+  max_degree: 3062
+
+training_default: &training_default
+  repeats: 10
+  random_seed: [ 121371, 59211, 44185, 79709, 51612, 26233, 147, 30778, 21874, 61721 ]
+  learning_rate: 1e-3
+  batch_size: 128
+  min_epochs: 10
+  max_epochs: 5_000
+  use_scheduler: true
+  scheduler_metric: val_Loss
+  lr_scheduler_args:
+    min_lr: 1e-6
+    mode: min
+    factor: 0.5
+    patience: 10
+    verbose: true
+  main_metric: val_F1Score
+  early_stopping:
+    monitor: val_Loss
+    min_delta: 0.0
+    patience: 25
+    mode: min
+  checkpoint:
+    monitor: val_Loss
+    mode: min
+  num_workers: 10
+  wandb_project: "ensemble-readouts"
+
+default: &default
+  <<: [ *training_default, *reddit_multi ]
+  experiment_dir: data/experiments/ensemble_readouts/${.dataset_name}/${parent_name:}
+  dataset_dir: data/datasets
+  graph_conv: gcn
+  hidden_dim: 128
+  num_layers: 3
+  repr_dim: ${.hidden_dim}
+  readout_dim: ${.repr_dim}
+  predictor_name: MLPClassifier
+  predictor_init_args:
+    input_dim: ${..readout_dim}
+    intermediate_dim: 128
+    output_dim: ${..output_dim}
+    activation: relu
+  transforms_config: # when using other transform this must be always copied to avoid overriding
+    OneHotDegree:
+      max_degree: ${reddit_multi.max_degree}
+
+sum_min_max_readout_config: &sum_min_max_readout_config
+  AggregateReadoutSum: { }
+  AggregateReadoutMean: { }
+  AggregateReadoutMax: { }
+
+deepsets_config: &deepsets_config
+  input_dim: ${default.repr_dim}
+  intermediate_dim: 128
+  output_dim: 128
+  activation: relu
+  dropout_rate: 0.4
+
+### GCN ###
+gcn_sum: &gcn_sum
+  <<: *default
+  model_name: GraphModel
+  readout_name: AggregateReadoutSum
+
+gcn_mean: &gcn_mean
+  <<: *default
+  model_name: GraphModel
+  readout_name: AggregateReadoutMean
+
+gcn_max: &gcn_max
+  <<: *default
+  model_name: GraphModel
+  readout_name: AggregateReadoutMax
+
+### ensemble readouts ###
+# gcn_sum_mean_max_concat
+gcn_concat_r: &gcn_concat_r
+  <<: *default
+  model_name: GraphModel
+  readout_dim: 384 # 128 * 3 = 384, all 3 aggregations are concatenated
+  readout_name: MultipleReadoutsConcat
+  readout_init_args:
+    readout_configs:
+      <<: *sum_min_max_readout_config
+
+# gcn_sum_mean_max_weighted
+gcn_w_mean_r: &gcn_w_mean_r
+  <<: *default
+  model_name: GraphModel
+  readout_name: MultipleReadoutsWeightedCombine
+  readout_init_args:
+    readout_configs:
+      <<: *sum_min_max_readout_config
+
+# gcn_sum_mean_max_projected_weighted
+gcn_w_mean_r_proj: &gcn_w_mean_r_proj
+  <<: *default
+  model_name: GraphModel
+  readout_name: MultipleReadoutsProjectedAndWeightedCombine
+  readout_init_args:
+    input_dim: ${..repr_dim}
+    readout_configs:
+      <<: *sum_min_max_readout_config
+
+### ensemble decisions ###
+# gcn_sum_mean_max_mean_decision
+gcn_mean_pred: &gcn_mean_pred
+  <<: *gcn_concat_r
+  readout_name: MultipleReadouts # readout_init_args are like in concat
+  predictor_name: MLPClassifierEnsembleMeanDecision # need for custom predictor
+  readout_dim: ${.repr_dim}
+
+# gcn_sum_mean_max_weighted_decision
+gcn_w_mean_pred: &gcn_w_mean_pred
+  <<: *gcn_concat_r
+  readout_name: MultipleReadouts # readout_init_args are like in concat
+  predictor_name: MLPClassifierEnsembleWeightedDecision
+  readout_dim: ${.repr_dim}
+  predictor_init_args:
+    num_readouts: 3
+    input_dim: ${..readout_dim}
+    intermediate_dim: 128
+    output_dim: ${..output_dim}
+    activation: relu
+
+# gcn_sum_mean_max_projection_weighted_decision
+gcn_w_mean_pred_proj: &gcn_w_mean_pred_proj
+  <<: *gcn_concat_r
+  readout_name: MultipleReadouts # readout_init_args are like in concat
+  predictor_name: MLPClassifierEnsembleProjectedWeightedDecision
+  readout_dim: ${.repr_dim}
+  predictor_init_args:
+    num_readouts: 3
+    input_dim: ${..readout_dim}
+    intermediate_dim: 128
+    output_dim: ${..output_dim}
+    activation: relu
+
+### other readouts ###
+gcn_virtual_node: &gcn_virtual_node
+  <<: *default
+  model_name: GraphModel
+  readout_name: VirtualNodeReadout
+  transforms_config:
+    OneHotDegree:
+      max_degree: ${reddit_multi.max_degree}
+    CustomVirtualNode:
+      connectivity: in
+
+gcn_dense: &gcn_dense
+  <<: *default
+  model_name: GraphModel
+  readout_name: DenseReadout
+  readout_init_args:
+    max_num_nodes_in_graph: ${..max_nodes}
+    input_dim: ${..repr_dim}
+    intermediate_dim: 256
+    output_dim: 128
+    dropout_rate: 0.4
+  readout_dim: ${.readout_init_args.output_dim}
+
+gcn_gru: &gcn_gru
+  <<: *default
+  model_name: GraphModel
+  readout_name: GRUReadout
+  readout_init_args:
+    hidden_dim: ${..repr_dim}
+    max_num_nodes_in_graph: ${..max_nodes}
+  readout_dim: ${.readout_init_args.hidden_dim}
+
+#gcn_node_transform: &gcn_node_transform
+gcn_deepsets_base: &gcn_deepsets_base
+  <<: *default
+  model_name: GraphModel
+  readout_name: DeepSetsBase
+  readout_init_args:
+    <<: *deepsets_config
+  readout_dim: ${.readout_init_args.output_dim}
+
+#gcn_node_transform_extra_large: &gcn_node_transform_extra_large
+gcn_deepsets_large: &gcn_deepsets_large
+  <<: *gcn_deepsets_base
+  readout_name: DeepSetsLarge
+
+### GIN ###
+gin_sum:
+  <<: *gcn_sum
+  graph_conv: gin
+
+gin_mean:
+  <<: *gcn_mean
+  graph_conv: gin
+
+gin_max:
+  <<: *gcn_max
+  graph_conv: gin
+
+gin_virtual_node:
+  <<: *gcn_virtual_node
+  graph_conv: gin
+
+gin_dense:
+  <<: *gcn_dense
+  graph_conv: gin
+
+gin_gru:
+  <<: *gcn_gru
+  graph_conv: gin
+
+gin_deepsets_base:
+  <<: *gcn_deepsets_base
+  graph_conv: gin
+
+gin_deepsets_large:
+  <<: *gcn_deepsets_large
+  graph_conv: gin
+
+gin_concat_r:
+  <<: *gcn_concat_r
+  graph_conv: gin
+
+gin_w_mean_r:
+  <<: *gcn_w_mean_r
+  graph_conv: gin
+
+gin_w_mean_r_proj:
+  <<: *gcn_w_mean_r_proj
+  graph_conv: gin
+
+gin_mean_pred:
+  <<: *gcn_mean_pred
+  graph_conv: gin
+
+gin_w_mean_pred:
+  <<: *gcn_w_mean_pred
+  graph_conv: gin
+
+gin_w_mean_pred_proj:
+  <<: *gcn_w_mean_pred_proj
+  graph_conv: gin
+
+### GAT ###
+# Note: use gat_config always first in anchor array [ *gat_config, ...], otherwise overriding won't work
+gat_config: &gat_config
+  graph_conv: gat
+  conv_kwargs:
+    heads: 8
+    concat: True # output_dim is divided by heads
+
+gat_sum:
+  <<: [ *gat_config, *gcn_sum ]
+
+gat_mean:
+  <<: [ *gat_config, *gcn_mean ]
+
+gat_max:
+  <<: [ *gat_config, *gcn_max ]
+
+gat_virtual_node:
+  <<: [ *gat_config, *gcn_virtual_node ]
+
+gat_dense:
+  <<: [ *gat_config, *gcn_dense ]
+
+gat_gru:
+  <<: [ *gat_config, *gcn_gru ]
+
+gat_deepsets_base:
+  <<: [ *gat_config, *gcn_deepsets_base ]
+
+gat_deepsets_large:
+  <<: [ *gat_config, *gcn_deepsets_large ]
+
+gat_concat_r:
+  <<: [ *gat_config, *gcn_concat_r ]
+
+gat_w_mean_r:
+  <<: [ *gat_config, *gcn_w_mean_r ]
+
+gat_w_mean_r_proj:
+  <<: [ *gat_config, *gcn_w_mean_r_proj ]
+
+gat_mean_pred:
+  <<: [ *gat_config, *gcn_mean_pred ]
+
+gat_w_mean_pred:
+  <<: [ *gat_config, *gcn_w_mean_pred ]
+
+gat_w_mean_pred_proj:
+  <<: [ *gat_config, *gcn_w_mean_pred_proj ]
