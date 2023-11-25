@@ -3,6 +3,26 @@ Graph-level representations using ensemble-based readout functions
 The following is repository containing implementation of the paper _"Graph-level representations using ensemble-based readout functions"_
 by Jakub Binkowski, Albert Sawczyn, Denis Janiak, Piotr Bielak and Tomasz Kajdanowicz.
 
+# Citation
+
+The paper is available on [arXiv](https://arxiv.org/abs/2303.02023) or in the proceedings of [ICCS 2023](https://link.springer.com/chapter/10.1007/978-3-031-35995-8_28).
+
+
+```BibTeX
+  @InProceedings{10.1007/978-3-031-35995-8_28,
+    author="Binkowski, Jakub and Sawczyn, Albert and Janiak, Denis and Bielak, Piotr and Kajdanowicz, Tomasz",
+    editor="Miky{\v{s}}ka, Ji{\v{r}}{\'i} and de Mulatier, Cl{\'e}lia and Paszynski, Maciej and Krzhizhanovskaya, Valeria V. and Dongarra, Jack J. and Sloot, Peter M.A.",
+    title="Graph-Level Representations Using Ensemble-Based Readout Functions",
+    booktitle="Computational Science -- ICCS 2023",
+    year="2023",
+    publisher="Springer Nature Switzerland",
+    address="Cham",
+    pages="393--405",
+    isbn="978-3-031-35995-8"
+    }
+```
+
+
 # Experiments
 
 ## Remarks
